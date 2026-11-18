@@ -1,29 +1,26 @@
-import json, os, re, urllib.parse, urllib.request
+import json, os, re, time, urllib.parse, urllib.request
 from playwright.sync_api import sync_playwright
 
 
 URL = "https://www.micheck123.com/book"
 STATE = "state.json"
+RUN_MINUTES = 340      # how long one job keeps checking
+INTERVAL = 60          # seconds between checks
 DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 TIME_RE = re.compile(r"^\d{1,2}:\d{2}\s*[AP]M", re.I)
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 
-def get_text():
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_context(user_agent=UA).new_page()
+def fetch_text(browser):
+    ctx = browser.new_context(user_agent=UA)
+    page = ctx.new_page()
+    try:
         page.goto(URL, wait_until="networkidle", timeout=60000)
-        try:
-            page.wait_for_selector(r"text=/\d{1,2}:\d{2}\s*[AP]M/i", timeout=60000)
-        except Exception:
-            print("Slots never appeared. Page text was:")
-            print(page.inner_text("body")[:1500])
-            raise
-        text = page.inner_text("body")
-        browser.close()
-    return text
+        page.wait_for_selector(r"text=/\d{1,2}:\d{2}\s*[AP]M/i", timeout=60000)
+        return page.inner_text("body")
+    finally:
+        ctx.close()
 
 
 def parse(text):
@@ -54,30 +51,42 @@ def call():
         print("CallMeBot reply:", r.status, r.read().decode(errors="ignore")[:300])
 
 
-if os.environ.get("TEST") == "true":
-    print("TEST MODE: forcing a call")
-    call()
+def main():
+    if os.environ.get("TEST") == "true":
+        print("TEST MODE: forcing a call")
+        call()
 
 
-slots = parse(get_text())
-print("Slots found:")
-for k, v in slots.items():
-    print(("  OPEN  " if v else "  full  ") + k)
-if not slots:
-    raise SystemExit("No slots parsed - page layout may have changed")
+    try:
+        prev = set(json.load(open(STATE)))
+    except Exception:
+        prev = set()
 
 
-available = sorted(k for k, v in slots.items() if v)
-try:
-    prev = set(json.load(open(STATE)))
-except Exception:
-    prev = set()
+    end = time.time() + RUN_MINUTES * 60
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        while True:
+            started = time.time()
+            try:
+                slots = parse(fetch_text(browser))
+                if not slots:
+                    print(time.strftime("%H:%M:%S"), "No slots parsed")
+                else:
+                    available = {k for k, v in slots.items() if v}
+                    new = sorted(available - prev)
+                    print(time.strftime("%H:%M:%S"),
+                          f"{len(available)} open of {len(slots)}; new: {new or 'none'}")
+                    if new:
+                        call()          # if this fails, prev is not updated, so it retries
+                    prev = available
+                    json.dump(sorted(prev), open(STATE, "w"))
+            except Exception as e:
+                print(time.strftime("%H:%M:%S"), "Check failed:", e)
+            if time.time() + INTERVAL > end:
+                break
+            time.sleep(max(0, INTERVAL - (time.time() - started)))
+        browser.close()
 
 
-new = [s for s in available if s not in prev]
-print("Newly open:", new or "none")
-if new:
-    call()   # if this fails, state is not saved, so the next run retries
-
-
-json.dump(available, open(STATE, "w"))
+main()
