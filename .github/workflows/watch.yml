@@ -38,10 +38,6 @@ jobs:
         env:
           TEST: ${{ github.event.inputs.test }}
           PYTHONUNBUFFERED: "1"
-          TWILIO_SID: ${{ secrets.TWILIO_SID }}
-          TWILIO_TOKEN: ${{ secrets.TWILIO_TOKEN }}
-          TWILIO_FROM: ${{ secrets.TWILIO_FROM }}
-          MY_NUMBER: ${{ secrets.MY_NUMBER }}
       - name: Save state
         if: always()
         run: |
@@ -50,7 +46,7 @@ jobs:
           git add state.json || true
           git diff --cached --quiet || (git commit -m "state" && git push)
       - name: Start next run
-        if: success()
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run watch.yml --ref ${{ github.ref_name }}
