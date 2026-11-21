@@ -1,7 +1,6 @@
 import json, os, re, time, urllib.parse, urllib.request
 from playwright.sync_api import sync_playwright
 
-
 URL = "https://www.micheck123.com/book"
 STATE = "state.json"
 RUN_MINUTES = 340      # how long one job keeps checking
@@ -10,7 +9,6 @@ DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sun
 TIME_RE = re.compile(r"^\d{1,2}:\d{2}\s*[AP]M", re.I)
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-
 
 def fetch_text(browser):
     ctx = browser.new_context(user_agent=UA)
@@ -21,7 +19,6 @@ def fetch_text(browser):
         return page.inner_text("body")
     finally:
         ctx.close()
-
 
 def parse(text):
     slots, day, cur = {}, None, None
@@ -41,7 +38,6 @@ def parse(text):
             slots[cur] = False
     return slots
 
-
 def call():
     url = ("https://api.callmebot.com/start.php?user=@deveshsalke"
            "&text=" + urllib.parse.quote_plus("Slots are available now")
@@ -50,18 +46,15 @@ def call():
     with urllib.request.urlopen(req, timeout=60) as r:
         print("CallMeBot reply:", r.status, r.read().decode(errors="ignore")[:300])
 
-
 def main():
     if os.environ.get("TEST") == "true":
         print("TEST MODE: forcing a call")
         call()
 
-
     try:
         prev = set(json.load(open(STATE)))
     except Exception:
         prev = set()
-
 
     end = time.time() + RUN_MINUTES * 60
     with sync_playwright() as p:
@@ -87,6 +80,5 @@ def main():
                 break
             time.sleep(max(0, INTERVAL - (time.time() - started)))
         browser.close()
-
 
 main()
